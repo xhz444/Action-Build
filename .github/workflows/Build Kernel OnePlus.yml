@@ -206,7 +206,9 @@ jobs:
           git config --global user.name "Numbersf"
           git config --global user.email "263623064@qq.com"
           mkdir kernel_workspace && cd kernel_workspace
-          git clone https://github.com/Numbersf/Action-Build.git -b ReSukiSU
+          git clone --depth=1 --branch "$GITHUB_REF_NAME" "https://github.com/${GITHUB_REPOSITORY}.git" Action-Build
+          git -C Action-Build fetch origin "$GITHUB_SHA" --depth=1
+          git -C Action-Build checkout --detach "$GITHUB_SHA"
 
       - name: Extract Manifest Info
         id: extract_info
@@ -709,10 +711,14 @@ jobs:
               echo "SUSFS_META 为空，使用最新上游 SUSFS"
             fi
             if [ "$KMI" = "android15-6.6" ]; then
-              META_PATCH="$GITHUB_WORKSPACE/patches/susfs-peer-group-fix.patch"
+              META_PATCH="$GITHUB_WORKSPACE/kernel_workspace/Action-Build/patches/susfs-peer-group-fix.patch"
               TARGET_PATCH="kernel_patches/50_add_susfs_in_gki-android15-6.6.patch"
               echo "正在应用 SUSFS mountinfo peer-group 修复"
-              test -f "$META_PATCH"
+              if [ ! -f "$META_PATCH" ]; then
+                echo "::error::Missing SUSFS peer-group patch: $META_PATCH"
+                exit 1
+              fi
+              sha256sum "$META_PATCH"
               git apply --check "$META_PATCH"
               git apply "$META_PATCH"
               grep -Fq 'r->mnt_group_id < DEFAULT_KSU_MNT_GROUP_ID' "$TARGET_PATCH"
