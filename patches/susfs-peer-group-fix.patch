@@ -1,0 +1,46 @@
+--- a/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch
++++ b/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch
+@@ -1343,7 +1343,7 @@
+  static __poll_t mounts_poll(struct file *file, poll_table *wait)
+  {
+  	struct seq_file *m = file->private_data;
+-@@ -239,6 +247,158 @@ static int show_vfsstat(struct seq_file *m, struct vfsmount *mnt)
++@@ -239,6 +247,165 @@ static int show_vfsstat(struct seq_file *m, struct vfsmount *mnt)
+  	return err;
+  }
+  
+@@ -1416,14 +1416,21 @@
+ +	show_mnt_opts(m, mnt);
+ +
+ +	/* Tagged fields ("foo:X" or "bar") */
+-+	if (IS_MNT_SHARED(r))
+++	/* Groups from SUSFS's KSU range can remain referenced by visible
+++	 * peer/slave rows after KSU mount rows are hidden.
+++	 */
+++	if (IS_MNT_SHARED(r) &&
+++	    r->mnt_group_id < DEFAULT_KSU_MNT_GROUP_ID)
+ +		seq_printf(m, " shared:%i", r->mnt_group_id);
+ +	if (IS_MNT_SLAVE(r)) {
+ +		int master = r->mnt_master->mnt_group_id;
+ +		int dom = get_dominating_id(r, &p->root);
+-+		seq_printf(m, " master:%i", master);
+-+		if (dom && dom != master)
+-+			seq_printf(m, " propagate_from:%i", dom);
+++		if (master < DEFAULT_KSU_MNT_GROUP_ID) {
+++			seq_printf(m, " master:%i", master);
+++			if (dom && dom != master &&
+++			    dom < DEFAULT_KSU_MNT_GROUP_ID)
+++				seq_printf(m, " propagate_from:%i", dom);
+++		}
+ +	}
+ +	if (IS_MNT_UNBINDABLE(r))
+ +		seq_puts(m, " unbindable");
+@@ -1502,7 +1509,7 @@
+  static int mounts_open_common(struct inode *inode, struct file *file,
+  			      int (*show)(struct seq_file *, struct vfsmount *))
+  {
+-@@ -308,16 +468,34 @@ static int mounts_release(struct inode *inode, struct file *file)
++@@ -308,16 +475,34 @@ static int mounts_release(struct inode *inode, struct file *file)
+  
+  static int mounts_open(struct inode *inode, struct file *file)
+  {

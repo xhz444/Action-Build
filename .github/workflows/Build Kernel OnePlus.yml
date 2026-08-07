@@ -708,6 +708,17 @@ jobs:
             else
               echo "SUSFS_META 为空，使用最新上游 SUSFS"
             fi
+            if [ "$KMI" = "android15-6.6" ]; then
+              META_PATCH="$GITHUB_WORKSPACE/patches/susfs-peer-group-fix.patch"
+              TARGET_PATCH="kernel_patches/50_add_susfs_in_gki-android15-6.6.patch"
+              echo "正在应用 SUSFS mountinfo peer-group 修复"
+              test -f "$META_PATCH"
+              git apply --check "$META_PATCH"
+              git apply "$META_PATCH"
+              grep -Fq 'r->mnt_group_id < DEFAULT_KSU_MNT_GROUP_ID' "$TARGET_PATCH"
+              grep -Fq 'master < DEFAULT_KSU_MNT_GROUP_ID' "$TARGET_PATCH"
+              grep -Fq 'dom < DEFAULT_KSU_MNT_GROUP_ID' "$TARGET_PATCH"
+            fi
             cd ..
           fi
           if [ "${{ github.event.inputs.RE_KERNEL }}" = "true" ]; then
@@ -744,11 +755,29 @@ jobs:
 
           if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             echo "正在打susfs补丁"
-            patch -p1 < 50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
+            if [ "$KMI" = "android15-6.6" ]; then
+              patch -p1 --forward --batch < 50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
+            else
+              patch -p1 < 50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
+            fi
             echo "susfs_patch完成"
           fi
           source $REJ_CHECKER
           check_rejects .
+          if [ "$KMI" = "android15-6.6" ] && [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
+            if find . -name '*.rej' -print -quit | grep -q .; then
+              check_rejects .
+              echo "::error::SUSFS patch produced reject files"
+              exit 1
+            fi
+            SOURCE="fs/proc_namespace.c"
+            grep -Fq 'r->mnt_group_id < DEFAULT_KSU_MNT_GROUP_ID' "$SOURCE"
+            grep -Fq 'master < DEFAULT_KSU_MNT_GROUP_ID' "$SOURCE"
+            grep -Fq 'dom < DEFAULT_KSU_MNT_GROUP_ID' "$SOURCE"
+            grep -Fq 'return mounts_open_common(inode, file, susfs_show_mountinfo);' "$SOURCE"
+            git diff --check -- "$SOURCE"
+            echo "SUSFS mountinfo peer-group 修复校验通过"
+          fi
 
       - name: Revert Fake Patches
         if: ${{ github.event.inputs.SUSFS_META != '-1' }}
